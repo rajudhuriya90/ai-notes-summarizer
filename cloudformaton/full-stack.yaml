@@ -1,0 +1,172 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AI-Based Notes Summarizer & Cloud Share - Full Infrastructure
+
+Parameters:
+  CodeBucket:
+    Type: String
+    Description: S3 bucket where Lambda .zip files are stored
+
+  UploadZip:
+    Type: String
+    Default: upload-handler.zip
+    Description: Name of upload Lambda zip file
+
+  SummaryZip:
+    Type: String
+    Default: summary-handler.zip
+    Description: Name of summary Lambda zip file
+
+  NotificationEmail:
+    Type: String
+    Description: Email address to receive summary notifications
+
+Resources:
+
+  NoteS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub note-files-${AWS::AccountId}-${AWS::Region}
+
+  NoteSummariesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: note_summaries
+      AttributeDefinitions:
+        - AttributeName: noteId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: noteId
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  NoteSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ai-notes-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub arn:aws:s3:::note-files-${AWS::AccountId}-${AWS::Region}/*
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/note_summaries
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref NoteSNSTopic
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: "*"
+
+  UploadHandlerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: upload-handler
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.12
+      Timeout: 30
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref UploadZip
+      Environment:
+        Variables:
+          TABLE_NAME: note_summaries
+          SNS_TOPIC_ARN: !Ref NoteSNSTopic
+
+  SummaryHandlerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: summary-handler
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.12
+      Timeout: 30
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref SummaryZip
+      Environment:
+        Variables:
+          TABLE_NAME: note_summaries
+
+  APIGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: NoteSummaryAPI
+      ProtocolType: HTTP
+
+  UploadRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGateway
+      RouteKey: "POST /upload"
+      Target: !Sub "integrations/${UploadIntegration}"
+
+  SummaryRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGateway
+      RouteKey: "GET /get-summary"
+      Target: !Sub "integrations/${SummaryIntegration}"
+
+  UploadIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref APIGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UploadHandlerFunction.Arn}/invocations
+      PayloadFormatVersion: "2.0"
+
+  SummaryIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref APIGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SummaryHandlerFunction.Arn}/invocations
+      PayloadFormatVersion: "2.0"
+
+  APIStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: prod
+      ApiId: !Ref APIGateway
+      AutoDeploy: true
+
+Outputs:
+  APIEndpoint:
+    Description: Base URL for the HTTP API
+    Value: !Sub "https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  BucketName:
+    Description: S3 Bucket created for file upload
+    Value: !Ref NoteS3Bucket
+  SNSTopic:
+    Description: SNS topic created for notifications
+    Value: !Ref NoteSNSTopic
