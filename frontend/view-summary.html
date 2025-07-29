@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>View Note Summary</title>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+        * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Montserrat', sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #0d1b2a;
+      color: #e0e6f8;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      transition: opacity 0.8s ease-in;
+      position: relative;
+    }
+
+    body.loaded {
+      opacity: 1;
+    }
+
+    #ai-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(ellipse at bottom, #0f2027, #203a43, #2c5364);
+    }
+
+    .container {
+      position: relative;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 40px 35px;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      text-align: center;
+      max-width: 600px;
+      width: 90%;
+      backdrop-filter: blur(14px);
+      z-index: 1;
+      animation: slideIn 1.2s ease-out;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateY(40px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .project-title {
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      animation: glowTitle 2s ease-in-out infinite alternate;
+      background: linear-gradient(90deg, #00c9ff, #92fe9d);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    @keyframes glowTitle {
+      0%   { text-shadow: 0 0 5px #00ffff66; }
+      100% { text-shadow: 0 0 20px #00ffffcc; }
+    }
+
+    h1 {
+      font-size: 20px;
+      margin-bottom: 15px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 14px 18px;
+      border-radius: 10px;
+      border: none;
+      font-size: 16px;
+      margin-bottom: 20px;
+      outline: none;
+      background: #334499;
+      color: #d8e2ff;
+    }
+
+    button {
+      background: linear-gradient(90deg, #00d8ff, #00ffab);
+      border: none;
+      padding: 14px 28px;
+      font-weight: 700;
+      font-size: 16px;
+      color: #1a1a1a;
+      border-radius: 12px;
+      cursor: pointer;
+      box-shadow: 0 5px 15px #00d8ffaa;
+      transition: background 0.3s ease, transform 0.2s ease;
+    }
+
+    button:hover {
+      transform: scale(1.05);
+    }
+
+    #summaryBox {
+      margin-top: 30px;
+      background: rgba(255,255,255,0.08);
+      padding: 20px;
+      border-radius: 10px;
+      color: #d9e4ff;
+      text-align: left;
+      white-space: pre-wrap;
+      font-size: 16px;
+      line-height: 1.6;
+      display: none;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    #error {
+      margin-top: 15px;
+      font-weight: 600;
+      color: #ff6e6e;
+    }
+
+    #clearBtn {
+      margin-top: 20px;
+      background: #ff6e6e;
+      color: white;
+      display: none;
+    }
+
+    .pulse-button {
+      margin-top: 15px;
+      padding: 14px 28px;
+      border: none;
+      border-radius: 50px;
+      background: linear-gradient(90deg, #00ffd5, #00aaff);
+      color: #0d1b2a;
+      font-weight: bold;
+      font-size: 16px;
+      cursor: pointer;
+      box-shadow: 0 0 0 rgba(0, 255, 213, 0.7);
+      animation: pulse 2s infinite;
+      transition: transform 0.2s ease;
+    }
+
+    .pulse-button:hover {
+      transform: scale(1.05);
+    }
+
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(0, 255, 213, 0.4);
+      }
+      70% {
+        box-shadow: 0 0 0 12px rgba(0, 255, 213, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(0, 255, 213, 0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="ai-bg"></canvas>
+
+  <div class="container">
+    <div class="project-title">🧠 AI Notes Summary Viewer</div>
+    <h1>Get Note Summary</h1>
+    <input type="text" id="noteIdInput" placeholder="Enter your Note ID..." />
+    <button onclick="fetchSummary()">Get Summary</button>
+    <div id="error"></div>
+    <div id="summaryBox"></div>
+
+    <div id="voiceBox" style="display:none; margin-top: 25px;">
+      <button id="voiceBtn" class="pulse-button">🎙️ Speak Summary</button>
+      <audio id="voiceAudio" preload="auto"></audio>
+    </div>
+
+    <button id="clearBtn" onclick="clearAndBack()">Clear & Back</button>
+  </div>
+
+  <script>
+    const API_ENDPOINT = "https://9vr9ndoril.execute-api.us-east-1.amazonaws.com";
+    console.log("Current API:", API_ENDPOINT);
+
+    window.onload = () => {
+      document.body.classList.add('loaded');
+      animateAIBackground();
+    };
+
+  async function fetchSummary() {
+    const noteId = document.getElementById('noteIdInput').value.trim();
+    const summaryBox = document.getElementById('summaryBox');
+    const errorBox = document.getElementById('error');
+    const clearBtn = document.getElementById('clearBtn');
+    const voiceBox = document.getElementById('voiceBox');
+    const voiceAudio = document.getElementById('voiceAudio');
+    const voiceBtn = document.getElementById('voiceBtn');
+
+    summaryBox.style.display = 'none';
+    summaryBox.textContent = '';
+    errorBox.textContent = '';
+    clearBtn.style.display = 'none';
+    voiceBox.style.display = 'none';
+    voiceAudio.src = '';
+
+    if (!noteId) {
+      errorBox.textContent = 'Please enter a valid Note ID.';
+      return;
+    }
+
+    try {
+      summaryBox.textContent = '⏳ Fetching summary...';
+      summaryBox.style.display = 'block';
+
+      const response = await fetch(`${API_ENDPOINT}/get-summary?noteId=${noteId}`);
+      const raw = await response.json();
+
+      // ✅ FIX: Properly parse if raw.body is a JSON string
+      const result = typeof raw.body === "string" ? JSON.parse(raw.body) : raw;
+
+      if (response.ok) {
+        summaryBox.textContent = result.summary || 'No summary found.';
+        summaryBox.style.display = 'block';
+        clearBtn.style.display = 'inline-block';
+
+        // ✅ SHOW 🎙️ Button if audio_url exists
+        if (result.audio_url) {
+          voiceAudio.src = result.audio_url;
+          voiceBox.style.display = 'block';
+
+          voiceBtn.textContent = '🎙️ Speak Summary';
+          voiceBtn.onclick = () => {
+            if (voiceAudio.paused) {
+              voiceAudio.play();
+              voiceBtn.textContent = '⏸️ Pause Summary';
+            } else {
+              voiceAudio.pause();
+              voiceBtn.textContent = '🎙️ Speak Summary';
+            }
+          };
+
+          voiceAudio.onended = () => {
+            voiceBtn.textContent = '🎙️ Speak Summary';
+          };
+        }
+      } else {
+        summaryBox.style.display = 'none';
+        errorBox.textContent = result.error || 'Summary not found.';
+      }
+    } catch (err) {
+      console.error("Error fetching summary:", err);
+      errorBox.textContent = '⚠️ Error while fetching summary.';
+    }
+  }
+
+    function clearAndBack() {
+      document.body.style.opacity = '0';
+      setTimeout(() => {
+        window.location.href = 'upload.html';
+      }, 500);
+    }
+
+    function animateAIBackground() {
+      const canvas = document.getElementById('ai-bg');
+      const ctx = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      let particles = [];
+      const total = 100;
+      for (let i = 0; i < total; i++) {
+        particles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          vx: (Math.random() - 0.5) * 0.6,
+          vy: (Math.random() - 0.5) * 0.6,
+          radius: Math.random() * 2 + 1
+        });
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#00ffff';
+        particles.forEach(p => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        for (let i = 0; i < total; i++) {
+          for (let j = i + 1; j < total; j++) {
+            let dx = particles[i].x - particles[j].x;
+            let dy = particles[i].y - particles[j].y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 100) {
+              ctx.beginPath();
+              ctx.strokeStyle = `rgba(0,255,255,${1 - dist / 100})`;
+              ctx.moveTo(particles[i].x, particles[i].y);
+              ctx.lineTo(particles[j].x, particles[j].y);
+              ctx.stroke();
+            }
+          }
+        }
+
+        particles.forEach(p => {
+          p.x += p.vx;
+          p.y += p.vy;
+          if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+          if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+        });
+
+        requestAnimationFrame(draw);
+      }
+
+      draw();
+      window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      });
+    }
+  </script>
+</body>
+</html>

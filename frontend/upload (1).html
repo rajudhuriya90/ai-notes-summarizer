@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Upload Note | AI Summary</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Montserrat', sans-serif;
+      background: #0d1b2a;
+      color: #e0e6f8;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      transition: opacity 0.8s ease-in;
+      position: relative;
+    }
+
+    body.loaded {
+      opacity: 1;
+    }
+
+    #ai-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(ellipse at bottom, #0f2027, #203a43, #2c5364);
+    }
+
+    #ai-svg-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background: url('https://www.transparenttextures.com/patterns/circuit-board.png') repeat;
+      opacity: 0.03;
+    }
+
+    .container {
+      position: relative;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 40px 35px;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      text-align: center;
+      max-width: 480px;
+      width: 90%;
+      backdrop-filter: blur(20px);
+      z-index: 1;
+      animation: slideIn 1.2s ease-out;
+      transform-style: preserve-3d;
+      transition: transform 0.4s;
+    }
+
+    .container:hover {
+      transform: perspective(1000px) rotateX(2deg) rotateY(2deg);
+    }
+
+    @keyframes slideIn {
+      from { transform: translateY(40px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .project-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      animation: glowTitle 2s ease-in-out infinite alternate;
+      background: linear-gradient(90deg, #00c9ff, #92fe9d);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    @keyframes glowTitle {
+      0% { text-shadow: 0 0 5px #00ffff66; }
+      100% { text-shadow: 0 0 20px #00ffffcc; }
+    }
+
+    h1 {
+      font-size: 22px;
+      margin-bottom: 20px;
+      min-height: 30px;
+    }
+
+    lottie-player {
+      margin-bottom: 10px;
+    }
+
+    label {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 10px;
+    }
+
+    input[type="file"] {
+      padding: 12px 15px;
+      border-radius: 10px;
+      border: none;
+      background: #334499;
+      color: #d8e2ff;
+      width: 100%;
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+
+    button {
+      background: linear-gradient(90deg, #00d8ff, #00ffab);
+      color: #121212;
+      font-weight: 700;
+      font-size: 16px;
+      padding: 14px 0;
+      width: 100%;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: 0.3s ease;
+      box-shadow: 0 5px 12px #00d8ffaa;
+      position: relative;
+    }
+
+    button.loading::after {
+      content: '⏳';
+      position: absolute;
+      right: 15px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg);}
+      100% { transform: rotate(360deg);}
+    }
+
+    button:hover {
+      transform: scale(1.03);
+    }
+
+    input#noteIdText {
+      border: none;
+      background: none;
+      color: #00e1ff;
+      font-weight: bold;
+      font-size: 16px;
+      text-align: center;
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .copy-button {
+      background: linear-gradient(90deg, #00d8ff, #00ffab);
+      color: #121212;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 10px;
+      font-weight: bold;
+      margin-top: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0, 216, 255, 0.3);
+    }
+
+    .copy-button:hover {
+      background: linear-gradient(90deg, #00c9ff, #00bfa6);
+      transform: scale(1.05);
+    }
+
+    #status, #error {
+      margin-top: 20px;
+      font-weight: 600;
+      font-size: 15px;
+    }
+
+    #status { color: #6dfc8b; }
+    #error { color: #ff6e6e; }
+
+    a {
+      text-decoration: none;
+      font-weight: bold;
+      color: #00d8ff;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="ai-bg"></canvas>
+  <div id="ai-svg-overlay"></div>
+
+  <div class="container">
+    <div class="project-title">🧠 AI Notes Summary Generator</div>
+    
+    <img
+  src="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fcdn-icons-png.flaticon.com%2F512%2F10644%2F10644640.png&f=1&nofb=1&ipt=0255ac2bc2f4d279d9471bf9a81e3e0359177299d8ceccbdd6960f76a6e75696"
+  alt="AI Circuit Icon"
+  style="width:140px; height:auto; margin: 0 auto 20px auto; display: block;"
+/>
+
+    <h1 id="animatedTitle"></h1>
+    <form id="uploadForm">
+      <label for="fileInput">Select a file (.txt, .pdf):</label>
+      <input type="file" id="fileInput" accept=".txt,.pdf" required />
+      <button type="submit" id="uploadBtn">Upload</button>
+    </form>
+    <div id="status"></div>
+    <div id="error"></div>
+  </div>
+
+  <script>
+    const API_ENDPOINT = "https://9vr9ndoril.execute-api.us-east-1.amazonaws.com";
+    console.log("Current API:", API_ENDPOINT);
+
+    const uploadForm = document.getElementById('uploadForm');
+    const status = document.getElementById('status');
+    const error = document.getElementById('error');
+    const uploadBtn = document.getElementById('uploadBtn');
+
+    window.onload = () => {
+      document.body.classList.add('loaded');
+      typeWriter("Upload Your Note");
+      animateAIBackground();
+    };
+
+    function typeWriter(text) {
+      let i = 0;
+      const target = document.getElementById("animatedTitle");
+      function typing() {
+        if (i < text.length) {
+          target.innerHTML += text.charAt(i);
+          i++;
+          setTimeout(typing, 70);
+        }
+      }
+      typing();
+    }
+
+    async function extractTextFromPDF(file) {
+      const reader = new FileReader();
+      return new Promise((resolve, reject) => {
+        reader.onload = async function () {
+          const typedArray = new Uint8Array(reader.result);
+          const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+          let fullText = '';
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            const strings = content.items.map(item => item.str).join(' ');
+            fullText += strings + '\n\n';
+          }
+          resolve(fullText);
+        };
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    function copyToClipboard() {
+      const noteId = document.getElementById("noteIdText")?.value?.trim();
+      if (!noteId) return;
+      const textarea = document.createElement("textarea");
+      textarea.value = noteId;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+
+      const copyBtn = document.querySelector(".copy-button");
+      copyBtn.textContent = "✅ Copied!";
+      copyBtn.style.background = "#00c47e";
+      setTimeout(() => {
+        copyBtn.textContent = "📋 Copy ID";
+        copyBtn.style.background = "linear-gradient(90deg, #00d8ff, #00ffab)";
+      }, 1500);
+    }
+
+    uploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      status.innerHTML = '';
+      error.textContent = '';
+      uploadBtn.classList.add('loading');
+      uploadBtn.disabled = true;
+
+      const fileInput = document.getElementById('fileInput');
+      if (!fileInput.files.length) {
+        error.textContent = 'Please select a file to upload.';
+        uploadBtn.classList.remove('loading');
+        uploadBtn.disabled = false;
+        return;
+      }
+
+      const file = fileInput.files[0];
+      let extractedText = "";
+
+      if (file.name.endsWith(".pdf")) {
+        extractedText = await extractTextFromPDF(file);
+      } else {
+        const reader = new FileReader();
+        extractedText = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsText(file);
+        });
+      }
+
+      const payload = { text: extractedText };
+
+      try {
+        const response = await fetch(`${API_ENDPOINT}/upload`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        uploadBtn.classList.remove('loading');
+        uploadBtn.disabled = false;
+
+        if (response.ok) {
+          const noteId = result.note_id;
+          status.innerHTML = `
+            ✅ <b>Upload successful!</b><br><br>
+            🆔 Your Note ID:<br>
+            <input id="noteIdText" value="${noteId}" readonly />
+            <button class="copy-button" onclick="copyToClipboard()">📋 Copy ID</button><br><br>
+            <a href="/view-summary.html?noteId=${noteId}">🔍 View Summary</a>
+          `;
+        } else {
+          error.textContent = result.error || 'Upload failed.';
+        }
+      } catch (err) {
+        error.textContent = '⚠️ Network error while uploading.';
+        uploadBtn.classList.remove('loading');
+        uploadBtn.disabled = false;
+      }
+    });
+
+    function animateAIBackground() {
+      const canvas = document.getElementById('ai-bg');
+      const ctx = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      let particles = [];
+      const total = 100;
+      for (let i = 0; i < total; i++) {
+        particles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          vx: (Math.random() - 0.5) * 0.6,
+          vy: (Math.random() - 0.5) * 0.6,
+          radius: Math.random() * 2 + 1
+        });
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#00ffff';
+        particles.forEach(p => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        for (let i = 0; i < total; i++) {
+          for (let j = i + 1; j < total; j++) {
+            let dx = particles[i].x - particles[j].x;
+            let dy = particles[i].y - particles[j].y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 100) {
+              ctx.beginPath();
+              ctx.strokeStyle = `rgba(0,255,255,${1 - dist / 100})`;
+              ctx.moveTo(particles[i].x, particles[i].y);
+              ctx.lineTo(particles[j].x, particles[j].y);
+              ctx.stroke();
+            }
+          }
+        }
+
+        particles.forEach(p => {
+          p.x += p.vx;
+          p.y += p.vy;
+          if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+          if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+        });
+
+        requestAnimationFrame(draw);
+      }
+
+      draw();
+
+      window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      });
+    }
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
+</body>
+</html>

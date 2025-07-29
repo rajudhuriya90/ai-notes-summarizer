@@ -1,0 +1,60 @@
+How to Deploy This Project Using CloudFormation (YAML)
+This guide helps any developer, student, or interviewer deploy the AI Notes Summarizer & Cloud Share Project in their own AWS account using a single full-stack.yaml.
+
+Project Components Deployed
+✅ S3 bucket (for file uploads)
+
+✅ Lambda functions (upload-handler & summary-handler)
+
+✅ API Gateway (HTTP API)
+
+✅ DynamoDB table (to store summaries)
+
+✅ SNS topic (email notification)
+
+✅ IAM Role for Lambda
+
+✅ CloudWatch logging
+
+✅ Environment variables (table name, SNS ARN)
+
+
+📝 Prerequisites
+Make sure you have:
+
+✅ An AWS Account
+
+✅ AWS CLI installed and configured (aws configure)
+
+✅ Python Lambda ZIPs:
+
+upload-handler.zip
+
+summary-handler.zip
+
+✅ An S3 bucket to store ZIPs (e.g., my-code-bucket)
+
+✅ Your email for SNS (e.g., youremail@gmail.com)
+
+
+📁 Step-by-Step Deployment
+📍 Step 1: Upload Lambda ZIPs to S3
+
+Replace my-code-bucket with your actual bucket name.
+
+aws s3 cp lambda/upload-handler.zip s3://my-code-bucket/
+aws s3 cp lambda/summary-handler.zip s3://my-code-bucket/
+
+
+
+Step 2: Deploy CloudFormation Stack
+
+Run this command from your project root where full-stack.yaml is located.
+
+aws cloudformation deploy \
+  --template-file cloudformation/full-stack.yaml \
+  --stack-name ai-notes-project \
+  --parameter-overrides \
+    CodeBucket=my-code-bucket \
+    NotificationEmail=youremail@gmail.com \
+  --capabilities CAPABILITY_NAMED_IAM
